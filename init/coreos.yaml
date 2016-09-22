@@ -1,0 +1,65 @@
+#cloud-config
+
+hostname: <%= hostname %>
+
+users:
+  - name: infra
+    ssh-authorized-keys:
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCnise8Ql7dQmGI9rFeVnAruZurcLmJ3gVij+UikK+1gFwzJqMA2aRAC+DxGIRmDMeS0IxhM469TgkWTffu0P2QuwQdWDrHEYVolqlNUUtTTmL80Apl/TY5lteWx5yrMVxmOO/y7rJFq07GgAQtx7WPQPZ/TodG+KpOmTtGDhxZ1GM1MBK0SpfvVCTQtapZNYe431NuY++R1WVnSWI+GStQcgi+ZnB8iPlK/S70fhMqhqGi77hHyQ/riOmZnyiqO2ku4GSPHhm+sIglmDkzB6q9/0jIBtcy1ChAzSEW4ej3xr6zxitxZQh5eUrYGMTaOHfQU68YlgNLGbStTNXAplyf mav@idoniko
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    groups:
+      - sudo
+    shell: /bin/bash
+
+coreos:
+  etcd2:
+    name: <%= hostname %>
+    advertise-client-urls: http://$public_ipv4:2379
+    initial-advertise-peer-urls: http://$private_ipv4:2380
+    listen-client-urls: http://0.0.0.0:2379
+    listen-peer-urls: http://$private_ipv4:2380
+    initial-cluster: <%= initial_coreos_etcd_cluster %>
+    # the following two are for vagrant
+    # peer-heartbeat-interval: 10
+    # peer-election-timeout: 100
+  fleet:
+    etcd_servers: <%= coreos_etcd_servers %>
+    public-ip: $public_ipv4
+    metadata: role=coreos_etcd
+  flannel:
+    interface: "$public_ipv4"
+    etcd-endpoints: <%= coreos_etcd_servers %>
+  locksmith:
+    endpoint: "<%= coreos_etcd_servers %>"
+  units:
+    - name: systemd-timesyncd.service
+      command: start
+    - name: etcd2.service
+      command: start
+    - name: fleet.service
+      command: start
+    - name: flanneld.service
+      drop-ins:
+      - name: 50-network-config.conf
+        content: |
+          [Service]
+          ExecStartPre=/usr/bin/etcdctl set /coreos.com/network/config '{ "Network": "10.1.0.0/16" }'
+      command: start
+    - name: docker-tcp.socket
+      command: start
+      enable: true
+      content: |
+        [Unit]
+        Description=Docker Socket for the API
+
+        [Socket]
+        ListenStream=2375
+        Service=docker.service
+        BindIPv6Only=both
+
+        [Install]
+        WantedBy=sockets.target
+  update:
+    reboot-strategy: etcd-lock
+
+
