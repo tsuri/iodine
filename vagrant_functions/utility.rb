@@ -183,6 +183,8 @@ def provisionServers(binaries_dir, config, type, template)
       system "ssh-keygen -f /home/mav/.ssh/known_hosts -R #{ip} > /dev/null 2>&1"
       system "ssh-keygen -f /home/mav/.ssh/known_hosts -R #{vm_name} > /dev/null 2>&1"
 
+      provisionMachineSSL(m, type, "kube-#{type}-#{ip}",template['ips'])
+
       m.vm.provider :virtualbox do |vb|
         vb.gui = false
         vb.linked_clone = true
