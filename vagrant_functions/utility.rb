@@ -214,6 +214,7 @@ def provisionServers(binaries_dir, config, type, template)
         :initial_coreos_etcd_cluster => $cluster['servers']['coreos']['initial-cluster'],
         :initial_kubernetes_etcd_cluster => $cluster['servers']['etcd']['initial-cluster'],
         :coreos_etcd_servers => $cluster['servers']['coreos']['endpoints'],
+        :kubernetes_etcd_servers => $cluster['servers']['etcd']['endpoints'],
       }
       pp vars
       instantiate(template['provision'], "OUT/cloudinit_#{vm_name}", vars)

@@ -1,0 +1,123 @@
+#cloud-config
+
+hostname: <%= hostname %>
+
+users:
+  - name: infra
+    ssh-authorized-keys:
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCnise8Ql7dQmGI9rFeVnAruZurcLmJ3gVij+UikK+1gFwzJqMA2aRAC+DxGIRmDMeS0IxhM469TgkWTffu0P2QuwQdWDrHEYVolqlNUUtTTmL80Apl/TY5lteWx5yrMVxmOO/y7rJFq07GgAQtx7WPQPZ/TodG+KpOmTtGDhxZ1GM1MBK0SpfvVCTQtapZNYe431NuY++R1WVnSWI+GStQcgi+ZnB8iPlK/S70fhMqhqGi77hHyQ/riOmZnyiqO2ku4GSPHhm+sIglmDkzB6q9/0jIBtcy1ChAzSEW4ej3xr6zxitxZQh5eUrYGMTaOHfQU68YlgNLGbStTNXAplyf mav@idoniko
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    groups:
+      - sudo
+    shell: /bin/bash
+    
+coreos:
+  fleet:
+    etcd-servers: <%= coreos_etcd_servers %>
+    public-ip: $public_ipv4
+    metadata: role=coreos_node,disk=ssd
+  flannel:
+    interface: "$public_ipv4"
+  locksmith:
+    endpoint: "<%= coreos_etcd_servers %>"
+  units:
+    - name: kube-apiserver.service
+      command: start
+      content: |
+        [Unit]
+        Description=Kubernetes API Server
+        [Service]
+        ExecStart=/opt/bin/kube-apiserver \
+        --admission-control=NamespaceLifecycle,LimitRanger,ServiceAccount,ResourceQuota \
+        --advertise-address=$private_ipv4 \
+        --allow-privileged=true \
+        --apiserver-count=1 \
+        --bind-address=0.0.0.0 \
+        --etcd-servers=<%= kubernetes_etcd_servers %> \
+        --service-account-key-file=/etc/kubernetes/ssl/master-key.pem \
+        --service-cluster-ip-range=10.32.0.0/24 \
+        --service-node-port-range=30000-32767 \
+        --tls-cert-file=/etc/kubernetes/ssl/master.pem \
+        --tls-private-key-file=/etc/kubernetes/ssl/master-key.pem \
+        --v=2
+        Restart=on-failure
+        RestartSec=5
+        [Install]
+        WantedBy=multi-user.target
+    - name: format-media-node0.service
+      command: start
+      content: |
+        [Unit]
+        Description=Formats the dedicated node disk
+        After=dev-sdb.device
+        Requires=dev-sdb.device
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/usr/sbin/wipefs -f /dev/sdb
+        # here we should create a partition and format that. More flexible if we want to resize
+        ExecStart=/usr/sbin/mkfs.ext4 -F /dev/sdb
+    - name: media-node0.mount
+      command: start
+      content: |
+        [Unit]
+        Description=Mount node to /media/node0
+        Requires=format-media-node0.service
+        After=format-media-node0.service
+        [Mount]
+        # here we should use the partition /dev/sdb1
+        What=/dev/sdb
+        Where=/media/node0
+        Type=ext4
+    - name: format-media-node1.service
+      command: start
+      content: |
+        [Unit]
+        Description=Formats the dedicated node disk
+        After=dev-sdc.device
+        Requires=dev-sdc.device
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/usr/sbin/wipefs -f /dev/sdc
+        ExecStart=/usr/sbin/mkfs.ext4 -F /dev/sdc
+    - name: media-node1.mount
+      command: start
+      content: |
+        [Unit]
+        Description=Mount node to /media/node1
+        Requires=format-media-node1.service
+        After=format-media-node1.service
+        [Mount]
+        What=/dev/sdc
+        Where=/media/node1
+        Type=ext4
+    - name: systemd-timesyncd.service
+      command: start
+    - name: fleet.service
+      command: start
+      etcd_servers: <%= coreos_etcd_servers %>
+    - name: flanneld.service
+      etcd-endpoints: <%= coreos_etcd_servers %>
+      drop-ins:
+      - name: 50-network-config.conf
+        content: |
+          [Service]
+          ExecStartPre=/usr/bin/etcdctl --endpoints=<%= coreos_etcd_servers %> set /coreos.com/network/config '{ "Network": "10.1.0.0/16" }'
+      command: start
+    - name: docker-tcp.socket
+      command: start
+      enable: true
+      content: |
+        [Unit]
+        Description=Docker Socket for the API
+
+        [Socket]
+        ListenStream=2375
+        Service=docker.service
+        BindIPv6Only=both
+
+        [Install]
+        WantedBy=sockets.target
+  update:
+    reboot-strategy: etcd-lock
