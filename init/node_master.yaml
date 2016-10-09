@@ -28,17 +28,9 @@ coreos:
         Description=Kubernetes API Server
         [Service]
         ExecStart=/opt/bin/kube-apiserver \
-        --admission-control=NamespaceLifecycle,LimitRanger,ServiceAccount,ResourceQuota \
-        --advertise-address=$private_ipv4 \
-        --allow-privileged=true \
-        --apiserver-count=1 \
         --bind-address=0.0.0.0 \
         --etcd-servers=<%= kubernetes_etcd_servers %> \
-        --service-account-key-file=/etc/kubernetes/ssl/master-key.pem \
         --service-cluster-ip-range=10.32.0.0/24 \
-        --service-node-port-range=30000-32767 \
-        --tls-cert-file=/etc/kubernetes/ssl/master.pem \
-        --tls-private-key-file=/etc/kubernetes/ssl/master-key.pem \
         --v=2
         Restart=on-failure
         RestartSec=5
