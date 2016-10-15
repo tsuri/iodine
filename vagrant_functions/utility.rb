@@ -208,7 +208,7 @@ def provisionServers(binaries_dir, config, type, template)
         
       end
       m.vm.hostname = vm_name
-      m.vm.network :private_network, ip: ip
+      m.vm.network :private_network, ip: ip, virtualbox__intnet: "etcdnet"
       vars = {
         :hostname => vm_name,
         :initial_coreos_etcd_cluster => $cluster['servers']['coreos']['initial-cluster'],
@@ -222,12 +222,14 @@ def provisionServers(binaries_dir, config, type, template)
       m.vm.provision :shell, :inline => "mv /tmp/vagrantfile-user-data /var/lib/coreos-vagrant/", :privileged => true
 
       required_binaries = []
-      if type == 'master'
-        required_binaries = REQUIRED_BINARIES_FOR_MASTER
-      end
-      if type == 'worker'
-        required_binaries = REQUIRED_BINARIES_FOR_NODES
-      end
+
+      # Slow. Don't do this untill we have flannel runing
+      # if type == 'master'
+      #   required_binaries = REQUIRED_BINARIES_FOR_MASTER
+      # end
+      # if type == 'worker'
+      #   required_binaries = REQUIRED_BINARIES_FOR_NODES
+      # end
 
       required_binaries.each do |filename|
         file="#{binaries_dir}/#{filename}"
