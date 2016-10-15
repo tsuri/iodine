@@ -223,13 +223,12 @@ def provisionServers(binaries_dir, config, type, template)
 
       required_binaries = []
 
-      # Slow. Don't do this untill we have flannel runing
-      # if type == 'master'
-      #   required_binaries = REQUIRED_BINARIES_FOR_MASTER
-      # end
-      # if type == 'worker'
-      #   required_binaries = REQUIRED_BINARIES_FOR_NODES
-      # end
+      if type == 'master'
+        required_binaries = REQUIRED_BINARIES_FOR_MASTER
+      end
+      if type == 'worker'
+        required_binaries = REQUIRED_BINARIES_FOR_NODES
+      end
 
       required_binaries.each do |filename|
         file="#{binaries_dir}/#{filename}"
