@@ -18,6 +18,7 @@ coreos:
     metadata: role=coreos_node,disk=ssd
   flannel:
     interface: "$public_ipv4"
+    etcd_endpoints: "<%= coreos_etcd_servers %>"
   locksmith:
     endpoint: "<%= coreos_etcd_servers %>"
   units:
