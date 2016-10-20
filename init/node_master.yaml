@@ -30,6 +30,7 @@ coreos:
         [Service]
         ExecStart=/opt/bin/kube-apiserver \
         --bind-address=0.0.0.0 \
+        --insecure-bind-address=0.0.0.0 \
         --etcd-servers=<%= kubernetes_etcd_servers %> \
         --service-cluster-ip-range=10.32.0.0/24 \
         --v=2
