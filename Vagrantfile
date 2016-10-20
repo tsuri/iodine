@@ -37,7 +37,7 @@ $cluster = getClusterConfig(['cluster_default.cfg', 'cluster.cfg'])
 
 # configureUserData(3)
 
-REQUIRED_BINARIES_FOR_MASTER = ['kube-apiserver', 'kube-controller-manager', 'kube-scheduler']
+REQUIRED_BINARIES_FOR_MASTER = ['kube-apiserver', 'kube-controller-manager', 'kube-scheduler', 'kubectl']
 REQUIRED_BINARIES_FOR_NODES = ['kube-proxy', 'kubelet']
 REQUIRED_BINARIES = REQUIRED_BINARIES_FOR_MASTER + REQUIRED_BINARIES_FOR_NODES
 
