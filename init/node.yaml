@@ -10,7 +10,18 @@ users:
     groups:
       - sudo
     shell: /bin/bash
-    
+
+write-files:
+  - path: /opt/bin/wupiao
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      # [w]ait [u]ntil [p]ort [i]s [a]ctually [o]pen
+      [ -n "$1" ] && [ -n "$2" ] && while ! curl --output /dev/null \
+        --silent --head --fail \
+        http://${1}:${2}; do sleep 1 && echo -n .; done;
+      exit $?
+      
 coreos:
   fleet:
     etcd-servers: <%= coreos_etcd_servers %>
@@ -97,5 +108,19 @@ coreos:
 
         [Install]
         WantedBy=sockets.target
-  update:
+    - name: kube-kubelet.service
+      command: start
+      enable: true
+      content: |
+        [Unit]
+        Description=Kubernetes Kubelet
+        Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+        [Service]
+        # wait for kubernetes master to be up and ready
+        ExecStartPre=/opt/bin/wupiao <%= kubernetes_master %> 8080
+        ExecStart=/opt/bin/kubelet \
+        --api_servers=<%= kubernetes_master %>:8080
+        Restart=always
+        RestartSec=10
+update:
     reboot-strategy: etcd-lock
