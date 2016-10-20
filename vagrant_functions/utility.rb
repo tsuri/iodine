@@ -209,20 +209,35 @@ def provisionServers(binaries_dir, config, type, template)
       end
       m.vm.hostname = vm_name
       m.vm.network :private_network, ip: ip, virtualbox__intnet: "etcdnet"
+      # not sure if this second nic is needed, but I couldn't get access to
+      # the VMs otherwise. Vagrant itself can ssh into machines, so there must
+      # be a way through the default NAT interface. Anyhow, for now this should
+      # be good.
+      if type == "master" && i == 1
+        m.vm.network "public_network", bridge: "wlan0", auto_config: false
+        m.vm.provision "shell", run: "always", inline: "ifconfig eth2 192.168.1.222 netmask 255.255.255.0 up"
+      end
       vars = {
         :hostname => vm_name,
         :initial_coreos_etcd_cluster => $cluster['servers']['coreos']['initial-cluster'],
         :initial_kubernetes_etcd_cluster => $cluster['servers']['etcd']['initial-cluster'],
         :coreos_etcd_servers => $cluster['servers']['coreos']['endpoints'],
         :kubernetes_etcd_servers => $cluster['servers']['etcd']['endpoints'],
+        :kubernetes_master => $cluster['servers']['master']['ips'][0]
       }
       pp vars
+      puts "------------------"
+      pp $cluster
+      puts "------------------"
       instantiate(template['provision'], "OUT/cloudinit_#{vm_name}", vars)
       m.vm.provision :file, :source => "OUT/cloudinit_#{vm_name}", :destination => "/tmp/vagrantfile-user-data"
       m.vm.provision :shell, :inline => "mv /tmp/vagrantfile-user-data /var/lib/coreos-vagrant/", :privileged => true
 
-      required_binaries = []
 
+# maybe this is faster than the painful file copy below (we don't have guest additions for coreos)
+#      m.vm.synced_folder ".", "/vagrant", nfs: true, create: true, mount_options: ['nolock', 'vers=3', 'udp', 'noatime']
+
+      required_binaries = []
       if type == 'master'
         required_binaries = REQUIRED_BINARIES_FOR_MASTER
       end
