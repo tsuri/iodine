@@ -118,8 +118,26 @@ coreos:
         [Service]
         # wait for kubernetes master to be up and ready
         ExecStartPre=/opt/bin/wupiao <%= kubernetes_master %> 8080
-        ExecStart=/opt/bin/kubelet \
-        --api_servers=<%= kubernetes_master %>:8080
+        ExecStart=/opt/bin/hyperkube \
+        kubelet \
+        --api_servers=<%= kubernetes_master %>:8080 \
+        --cluster-domain=cluster.local \
+        --cluster-dns= 10.1.35.0
+        Restart=always
+        RestartSec=10
+    - name: kube-proxy.service
+      command: start
+      enable: true
+      content: |
+        [Unit]
+        Description=Kubernetes Kubelet
+        Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+        [Service]
+        # wait for kubernetes master to be up and ready
+        ExecStartPre=/opt/bin/wupiao <%= kubernetes_master %> 8080
+        ExecStart=/opt/bin/hyperkube \
+        proxy \
+        --master=<%= kubernetes_master %>:8080
         Restart=always
         RestartSec=10
 update:

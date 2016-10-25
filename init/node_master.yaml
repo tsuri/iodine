@@ -11,6 +11,17 @@ users:
       - sudo
     shell: /bin/bash
     
+write-files:
+  - path: /opt/bin/wupiao
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      # [w]ait [u]ntil [p]ort [i]s [a]ctually [o]pen
+      [ -n "$1" ] && [ -n "$2" ] && while ! curl --output /dev/null \
+        --silent --head --fail \
+        http://${1}:${2}; do sleep 1 && echo -n .; done;
+      exit $?
+      
 coreos:
   fleet:
     etcd-servers: <%= coreos_etcd_servers %>
@@ -28,7 +39,8 @@ coreos:
         [Unit]
         Description=Kubernetes API Server
         [Service]
-        ExecStart=/opt/bin/kube-apiserver \
+        ExecStart=/opt/bin/hyperkube \
+        apiserver \
         --bind-address=0.0.0.0 \
         --insecure-bind-address=0.0.0.0 \
         --etcd-servers=<%= kubernetes_etcd_servers %> \
@@ -38,6 +50,36 @@ coreos:
         RestartSec=5
         [Install]
         WantedBy=multi-user.target
+    - name: kube-scheduler.service
+      command: start
+      enable: true
+      content: |
+        [Unit]
+        Description=Kubernetes Scheduler
+        Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+        [Service]
+        # wait for kubernetes master to be up and ready
+        ExecStartPre=/opt/bin/wupiao <%= kubernetes_master %> 8080
+        ExecStart=/opt/bin/hyperkube \
+        scheduler \
+        --master=127.0.0.1:8080
+        Restart=always
+        RestartSec=10
+    - name: kube-controller-manager.service
+      command: start
+      enable: true
+      content: |
+        [Unit]
+        Description=Kubernetes Controller
+        Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+        [Service]
+        # wait for kubernetes master to be up and ready
+        ExecStartPre=/opt/bin/wupiao <%= kubernetes_master %> 8080
+        ExecStart=/opt/bin/hyperkube \
+        controller-manager \
+        --master=127.0.0.1:8080
+        Restart=always
+        RestartSec=10
     - name: format-media-node0.service
       command: start
       content: |

@@ -4,3 +4,6 @@
 ssl
 OUT
 binaries
+__pycache__/
+*pyc
+python_env

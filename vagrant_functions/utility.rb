@@ -55,7 +55,7 @@ end
 
 def assignIPs(cluster)
   (cluster['servers'].keys).each do |type|
-    ips = [*1..cluster['servers'][type]['count']].map{ |i| machineIP(type, i) }
+    ips = [*1..cluster['servers'][type]['count']].map{ |i| machineIP("172.28.8", 0, type, i) }
     cluster['servers'][type]['ips'] = ips
     if type == 'etcd' or type == 'coreos'
       # TODO(mav) we need 4xxx for coreos and 6xxx for kubernetes
@@ -108,17 +108,18 @@ def configureUserData(instances)
   end
 end
 
-def machineIP(type, n)
+def machineIP(network, offset, type, n)
   if type == "coreos"
-    base = 20
+    base = 9
   elsif type == "etcd"
-    base = 50
+    base = 14
   elsif type == "master"
-    base = 100
+    base = 19
   elsif type == "worker"
-    base = 200
+    base = 24
   end
-  return "172.28.8.#{base+n}"
+#  puts "network: #{network}, offset: #{offset}, type: #{type}, n: #{n}, ip: #{network}.#{offset+base+n}"
+  return "#{network}.#{offset+base+n}"
 end
 
 def machineName(type, n)
@@ -173,14 +174,16 @@ def provisionServers(binaries_dir, config, type, template)
   else
     reserve_count = 0
   end
-  puts "PROVISIONING SERVERS OF TYPE #{type} (#{base_count} + #{reserve_count} instances)"
+#  puts "PROVISIONING SERVERS OF TYPE #{type} (#{base_count} + #{reserve_count} instances)"
 
   
   (1..base_count+reserve_count).each do |i|
-    ip = machineIP(type, i)
+    ip = machineIP("172.28.8", 0, type, i)
+    host_ip = machineIP("192.168.1", 200, type, i)
     config.vm.define (vm_name = "%s%02d" % [type[0,1],i]),autostart:(i <= base_count) do |m|
-      puts "\tdefining machine #{vm_name}, #{ip}"
+#      puts "\tdefining machine #{vm_name}, #{ip}"
       system "ssh-keygen -f /home/mav/.ssh/known_hosts -R #{ip} > /dev/null 2>&1"
+      system "ssh-keygen -f /home/mav/.ssh/known_hosts -R #{host_ip} > /dev/null 2>&1"
       system "ssh-keygen -f /home/mav/.ssh/known_hosts -R #{vm_name} > /dev/null 2>&1"
 
       provisionMachineSSL(m, type, "kube-#{type}-#{ip}",template['ips'])
@@ -198,25 +201,28 @@ def provisionServers(binaries_dir, config, type, template)
             second_disk = File.join('/cluster_data/disks', vm_name, "cluster_disk_#{i}.vdi")
 #            second_disk = File.join(vb_machine_folder, vm_name, "cluster_disk_#{i}.vdi")
             unless File.exist?(second_disk)
-              puts ">>>> createhd #{second_disk}"
+#              puts ">>>> createhd #{second_disk}"
               vb.customize ['createhd', '--filename', second_disk, '--size', 20 * 1024] # 20Gb hard disk
             end
-            puts ">>>> storageattach #{second_disk}"
+#            puts ">>>> storageattach #{second_disk}"
             vb.customize ['storageattach', :id, '--storagectl', 'IDE Controller', '--port', 1, '--device', i, '--type', 'hdd', '--medium', second_disk]
           end
         end
         
       end
       m.vm.hostname = vm_name
-      m.vm.network :private_network, ip: ip, virtualbox__intnet: "etcdnet"
+      m.vm.network :private_network, ip: ip #, mac: "0800272079%02d" % i #, virtualbox__intnet: "etcdnet"
       # not sure if this second nic is needed, but I couldn't get access to
       # the VMs otherwise. Vagrant itself can ssh into machines, so there must
       # be a way through the default NAT interface. Anyhow, for now this should
       # be good.
-      if type == "master" && i == 1
-        m.vm.network "public_network", bridge: "wlan0", auto_config: false
-        m.vm.provision "shell", run: "always", inline: "ifconfig eth2 192.168.1.222 netmask 255.255.255.0 up"
-      end
+#      if type == "master" && i == 1
+#        m.vm.network "public_network", bridge: "wlan0", auto_config: false
+#        host_ip = machineIP("192.168.1", 200, type, i)
+#        puts ">>> SSH #{host_ip} #{type} #{i} <<< ";
+#        m.vm.provision "shell", run: "always", inline: "ifconfig eth2 #{host_ip} netmask 255.255.255.0 up"
+#      end
+
       vars = {
         :hostname => vm_name,
         :initial_coreos_etcd_cluster => $cluster['servers']['coreos']['initial-cluster'],
@@ -225,10 +231,10 @@ def provisionServers(binaries_dir, config, type, template)
         :kubernetes_etcd_servers => $cluster['servers']['etcd']['endpoints'],
         :kubernetes_master => $cluster['servers']['master']['ips'][0]
       }
-      pp vars
-      puts "------------------"
-      pp $cluster
-      puts "------------------"
+      # pp vars
+      # puts "------------------"
+      # pp $cluster
+      # puts "------------------"
       instantiate(template['provision'], "OUT/cloudinit_#{vm_name}", vars)
       m.vm.provision :file, :source => "OUT/cloudinit_#{vm_name}", :destination => "/tmp/vagrantfile-user-data"
       m.vm.provision :shell, :inline => "mv /tmp/vagrantfile-user-data /var/lib/coreos-vagrant/", :privileged => true
@@ -247,7 +253,7 @@ def provisionServers(binaries_dir, config, type, template)
 
       required_binaries.each do |filename|
         file="#{binaries_dir}/#{filename}"
-        puts ">>> #{type}: #{filename} (form #{file})\n"
+#        puts ">>> #{type}: #{filename} (form #{file})\n"
         m.vm.provision :file, :source => "#{file}", :destination => "/tmp/#{filename}"
         m.vm.provision :shell, :privileged => true, inline: <<-EOF
           echo "Copying host:#{file} to vm:/opt/bin/#{filename}.."

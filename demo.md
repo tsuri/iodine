@@ -9,7 +9,9 @@
 	- show the flannel0 interface and routing
 	- show etcdctl ls
 	- on w01, run a light container w/ bash
+	  docker run -ti debian absh
 	- login and get IP
+	  docker inspect CONTAINER-ID
 	- on w02, ping IP
 	- kill bash
 	- keep pinging and yo'll get error
