@@ -57,6 +57,19 @@ def machine_ip(type,i):
     base = {'c': 9, 'e': 14, 'm': 19, 'w': 24}
     return "172.28.8.%s" % str(base[type]+i)
 
+from functools import partial, update_wrapper
+def testGenerator():
+    for i in range(10):
+        func = partial(test_x)
+        # make decorator with_setup() work again
+        update_wrapper(func, test_x)
+        func.description = "nice test name %s" % i
+        testGenerator.__name__ = "nice test name %s" % i
+        yield func
+
+def test_x():
+    pass
+
 def test_m():
     servers = get_servers_definition()
     machines = get_vms()
@@ -102,9 +115,21 @@ def test_flannel():
 
 def _test_flannel(server, ip):
     try:
-        out = ssh_command(ip, "ifconfig flannel0")
-        print(out)
-        eq(0,0)
+        subnets = ssh_command("c01", "etcdctl ls /coreos.com/network/subnets/")
+        out = ssh_command(ip, "ifconfig flannel0|grep -w inet").strip()
+        match = re.match(r'inet ([0-9.]+)\s+netmask ([0-9.]+)\s+.*$', out)
+        if match:
+            public_ip_line = ssh_command("c01", "etcdctl get /coreos.com/network/subnets/%s-24" % match.group(1))
+            match_ip = re.match(r'{"PublicIP":"([0-9.]+)"}', public_ip_line.strip())
+            eq(ip, match_ip.group(1))
+            eq(match.group(2), "255.255.0.0")
+        else:
+            raise AssertionError
+        # match = re.match(r'([a-z0-9]+)\s+(%s) \(virtualbox\)' % states, line)
+        # if match:
+        #     machines[match.group(1)] = match.group(2)
+        # print(out)
+#        eq(out.strip(),"XXX")
     except AssertionError:
         raise
 
