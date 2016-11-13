@@ -212,36 +212,38 @@ def provisionServers(binaries_dir, config, type, template)
       end
       m.vm.hostname = vm_name
       m.vm.network :private_network, ip: ip #, mac: "0800272079%02d" % i #, virtualbox__intnet: "etcdnet"
-      # not sure if this second nic is needed, but I couldn't get access to
-      # the VMs otherwise. Vagrant itself can ssh into machines, so there must
-      # be a way through the default NAT interface. Anyhow, for now this should
-      # be good.
-#      if type == "master" && i == 1
-#        m.vm.network "public_network", bridge: "wlan0", auto_config: false
-#        host_ip = machineIP("192.168.1", 200, type, i)
-#        puts ">>> SSH #{host_ip} #{type} #{i} <<< ";
-#        m.vm.provision "shell", run: "always", inline: "ifconfig eth2 #{host_ip} netmask 255.255.255.0 up"
-#      end
-
       vars = {
         :hostname => vm_name,
+        :domain => $cluster['cluster']['domain'],
+        :kubernetes_pods_cidr => $cluster['cluster']['kubernetes_pods_cidr'],
+        :kubernetes_services_cidr => $cluster['cluster']['kubernetes_services_cidr'],
+        :kubernetes_dns_ip => $cluster['cluster']['kubernetes_dns_ip'],
         :initial_coreos_etcd_cluster => $cluster['servers']['coreos']['initial-cluster'],
         :initial_kubernetes_etcd_cluster => $cluster['servers']['etcd']['initial-cluster'],
         :coreos_etcd_servers => $cluster['servers']['coreos']['endpoints'],
         :kubernetes_etcd_servers => $cluster['servers']['etcd']['endpoints'],
         :kubernetes_master => $cluster['servers']['master']['ips'][0]
       }
-      # pp vars
-      # puts "------------------"
-      # pp $cluster
-      # puts "------------------"
+
+      directory = 'addons'
+      Dir.entries(directory).reject{|entry| entry == "." || entry == ".."}.select { |file| File.directory? File.join(directory, file)}.each do |addon|
+#        puts ">>> #{addon}"
+        
+        Dir.mkdir("OUT/#{addon}") unless File.directory?("OUT/#{addon}")
+        Dir.entries("addons/#{addon}").select { |p| /.*\.rb$/ =~ p }.each do |f|
+#          puts ">>>\t  #{f}"
+#          puts ">>>\t  #{File.basename(f, '.rb')}"
+          instantiate("addons/#{addon}/#{f}", "OUT/#{addon}/#{File.basename(f, '.rb')}", vars)
+        end
+      end
+#      puts "------------------"
+      
       instantiate(template['provision'], "OUT/cloudinit_#{vm_name}", vars)
       m.vm.provision :file, :source => "OUT/cloudinit_#{vm_name}", :destination => "/tmp/vagrantfile-user-data"
       m.vm.provision :shell, :inline => "mv /tmp/vagrantfile-user-data /var/lib/coreos-vagrant/", :privileged => true
 
-
 # maybe this is faster than the painful file copy below (we don't have guest additions for coreos)
-#      m.vm.synced_folder ".", "/vagrant", nfs: true, create: true, mount_options: ['nolock', 'vers=3', 'udp', 'noatime']
+      m.vm.synced_folder ".", "/vagrant", nfs: true, create: true, mount_options: ['nolock', 'vers=3', 'udp', 'noatime']
 
       required_binaries = []
       if type == 'master'
@@ -251,16 +253,23 @@ def provisionServers(binaries_dir, config, type, template)
         required_binaries = REQUIRED_BINARIES_FOR_NODES
       end
 
+      # synched folder is 4m vs. 11m of the old provisioning
       required_binaries.each do |filename|
-        file="#{binaries_dir}/#{filename}"
-#        puts ">>> #{type}: #{filename} (form #{file})\n"
-        m.vm.provision :file, :source => "#{file}", :destination => "/tmp/#{filename}"
         m.vm.provision :shell, :privileged => true, inline: <<-EOF
-          echo "Copying host:#{file} to vm:/opt/bin/#{filename}.."
+          echo "Copying /vagrant/binaries/#{filename} to vm:/opt/bin/#{filename}.."
           mkdir -p /opt/bin
-          cp "/tmp/#{filename}" "/opt/bin/#{filename}"
+          cp "/vagrant/binaries/#{filename}" "/opt/bin/#{filename}"
           chmod +x "/opt/bin/#{filename}"
 EOF
+
+#        file="#{binaries_dir}/#{filename}"
+#         m.vm.provision :file, :source => "#{file}", :destination => "/tmp/#{filename}"
+#         m.vm.provision :shell, :privileged => true, inline: <<-EOF
+#           echo "Copying host:#{file} to vm:/opt/bin/#{filename}.."
+#           mkdir -p /opt/bin
+#           cp "/tmp/#{filename}" "/opt/bin/#{filename}"
+#           chmod +x "/opt/bin/#{filename}"
+# EOF
       end
 
     end                         # machine def

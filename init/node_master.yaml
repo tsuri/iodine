@@ -29,7 +29,7 @@ coreos:
     metadata: role=coreos_node,disk=ssd
   flannel:
     interface: "$public_ipv4"
-    etcd_endpoints: "<%= coreos_etcd_servers %>"
+    etcd_endpoints: "<%= kubernetes_etcd_servers %>"
   locksmith:
     endpoint: "<%= coreos_etcd_servers %>"
   units:
@@ -41,11 +41,10 @@ coreos:
         [Service]
         ExecStart=/opt/bin/hyperkube \
         apiserver \
-        --bind-address=0.0.0.0 \
         --insecure-bind-address=0.0.0.0 \
         --etcd-servers=<%= kubernetes_etcd_servers %> \
-        --service-cluster-ip-range=10.32.0.0/24 \
-        --v=2
+        --service-cluster-ip-range=<%= kubernetes_services_cidr %> \
+        --v=3
         Restart=on-failure
         RestartSec=5
         [Install]
@@ -62,7 +61,8 @@ coreos:
         ExecStartPre=/opt/bin/wupiao <%= kubernetes_master %> 8080
         ExecStart=/opt/bin/hyperkube \
         scheduler \
-        --master=127.0.0.1:8080
+        --master=127.0.0.1:8080 \
+        --v=3
         Restart=always
         RestartSec=10
     - name: kube-controller-manager.service
@@ -77,7 +77,36 @@ coreos:
         ExecStartPre=/opt/bin/wupiao <%= kubernetes_master %> 8080
         ExecStart=/opt/bin/hyperkube \
         controller-manager \
-        --master=127.0.0.1:8080
+        --master=127.0.0.1:8080 \
+        --v=3
+        Restart=always
+        RestartSec=10
+    - name: kube-kubelet.service
+      command: start
+      enable: true
+      content: |
+        [Unit]
+        Description=Kubernetes Kubelet
+        Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+        [Service]
+        # wait for kubernetes master to be up and ready
+        ExecStartPre=/opt/bin/wupiao <%= kubernetes_master %> 8080
+        ExecStart=/opt/bin/hyperkube \
+        kubelet \
+        --api_servers=<%= kubernetes_master %>:8080 \
+        --register-schedulable=false \
+        --cluster-domain=<%= domain %> \
+        --cluster-dns=<%= kubernetes_dns_ip %> \
+        --address=0.0.0.0 \
+        --port=10250 \
+        --hostname_override=<%= hostname %> \
+        --allow_privileged=true \
+        --logtostderr=true \
+        --config=/opt/kubernetes/manifests/ \
+        --cadvisor_port=4194 \
+        --healthz_bind_address=0.0.0.0 \
+        --healthz_port=10248 \
+        --v=3
         Restart=always
         RestartSec=10
     - name: format-media-node0.service
@@ -134,12 +163,12 @@ coreos:
       command: start
       etcd_servers: <%= coreos_etcd_servers %>
     - name: flanneld.service
-      etcd-endpoints: <%= coreos_etcd_servers %>
+      etcd-endpoints: <%= kubernetes_etcd_servers %>
       drop-ins:
       - name: 50-network-config.conf
         content: |
           [Service]
-          ExecStartPre=/usr/bin/etcdctl --endpoints=<%= coreos_etcd_servers %> set /coreos.com/network/config '{ "Network": "10.1.0.0/16" }'
+          ExecStartPre=/usr/bin/etcdctl --endpoints=<%= kubernetes_etcd_servers %> set /coreos.com/network/config '{ "Network": "<%= kubernetes_etcd_servers %>"  }'
       command: start
     - name: docker-tcp.socket
       command: start
@@ -155,5 +184,11 @@ coreos:
 
         [Install]
         WantedBy=sockets.target
-  update:
+    - name: docker.service
+      drop-ins:
+        - name: 10-tls-verify.conf
+          content: |
+            [Service]
+            Environment="DOCKER_OPTS=--dns=<%= kubernetes_dns_ip %>"
+update:
     reboot-strategy: etcd-lock

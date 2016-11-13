@@ -28,9 +28,6 @@ coreos:
     etcd-servers: <%= coreos_etcd_servers %>
     public-ip: $public_ipv4
     metadata: role=coreos_node,disk=ssd
-  flannel:
-    interface: "$public_ipv4"
-    etcd_endpoints: "<%= coreos_etcd_servers %>"
   locksmith:
     endpoint: "<%= coreos_etcd_servers %>"
   units:
@@ -89,14 +86,6 @@ coreos:
     - name: fleet.service
       command: start
       etcd_servers: <%= coreos_etcd_servers %>
-    - name: flanneld.service
-      etcd-endpoints: <%= coreos_etcd_servers %>
-      drop-ins:
-      - name: 50-network-config.conf
-        content: |
-          [Service]
-          ExecStartPre=/usr/bin/etcdctl --endpoints=<%= coreos_etcd_servers %> set /coreos.com/network/config '{ "Network": "10.1.0.0/16" }'
-      command: start
     - name: docker-tcp.socket
       command: start
       enable: true

@@ -1,0 +1,33 @@
+Host w01
+    HostName w01
+    User infra
+    IdentityFile ~/.ssh/id_rsa
+
+Host w02
+    HostName w02
+    User infra
+    IdentityFile ~/.ssh/id_rsa
+
+Host w03
+    HostName w03
+    User infra
+    IdentityFile ~/.ssh/id_rsa
+
+Host e01
+    HostName e01
+    User infra
+    IdentityFile ~/.ssh/id_rsa
+
+Host c01
+    HostName c01
+    User infra
+    IdentityFile ~/.ssh/id_rsa
+
+Host m01
+    HostName m01
+    User infra
+    IdentityFile ~/.ssh/id_rsa
+
+
+
+

@@ -29,10 +29,16 @@ coreos:
     metadata: role=coreos_node,disk=ssd
   flannel:
     interface: "$public_ipv4"
-    etcd_endpoints: "<%= coreos_etcd_servers %>"
+    etcd_endpoints: "<%= kubernetes_etcd_servers %>"
   locksmith:
     endpoint: "<%= coreos_etcd_servers %>"
   units:
+    - name: rpcbind.service
+      enable: true
+      command: start
+    - name: rpc-statd.service
+      enable: true
+      command: start
     - name: format-media-node0.service
       command: start
       content: |
@@ -87,12 +93,12 @@ coreos:
       command: start
       etcd_servers: <%= coreos_etcd_servers %>
     - name: flanneld.service
-      etcd-endpoints: <%= coreos_etcd_servers %>
+      etcd-endpoints: <%= kubernetes_etcd_servers %>
       drop-ins:
       - name: 50-network-config.conf
         content: |
           [Service]
-          ExecStartPre=/usr/bin/etcdctl --endpoints=<%= coreos_etcd_servers %> set /coreos.com/network/config '{ "Network": "10.1.0.0/16" }'
+          ExecStartPre=/usr/bin/etcdctl --endpoints=<%= kubernetes_etcd_servers %> set /coreos.com/network/config '{ "Network": "<%= kubernetes_pods_cidr %>" }'
       command: start
     - name: docker-tcp.socket
       command: start
@@ -108,6 +114,12 @@ coreos:
 
         [Install]
         WantedBy=sockets.target
+    - name: docker.service
+      drop-ins:
+        - name: 10-tls-verify.conf
+          content: |
+            [Service]
+            Environment="DOCKER_OPTS=--dns=<%= kubernetes_dns_ip %>"
     - name: kube-kubelet.service
       command: start
       enable: true
@@ -121,8 +133,18 @@ coreos:
         ExecStart=/opt/bin/hyperkube \
         kubelet \
         --api_servers=<%= kubernetes_master %>:8080 \
-        --cluster-domain=cluster.local \
-        --cluster-dns= 10.1.35.0
+        --cluster-domain=<%= domain %> \
+        --cluster-dns=<%= kubernetes_dns_ip %> \
+        --address=0.0.0.0 \
+        --port=10250 \
+        --hostname_override=<%= hostname %> \
+        --allow_privileged=true \
+        --logtostderr=true \
+        --config=/opt/kubernetes/manifests/ \
+        --cadvisor_port=4194 \
+        --healthz_bind_address=0.0.0.0 \
+        --healthz_port=10248 \
+        --v=3
         Restart=always
         RestartSec=10
     - name: kube-proxy.service
@@ -130,14 +152,18 @@ coreos:
       enable: true
       content: |
         [Unit]
-        Description=Kubernetes Kubelet
+        Description=Kubernetes proxy
         Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+        Requires=network-online.target
+        After=network-online.target
         [Service]
         # wait for kubernetes master to be up and ready
         ExecStartPre=/opt/bin/wupiao <%= kubernetes_master %> 8080
         ExecStart=/opt/bin/hyperkube \
         proxy \
-        --master=<%= kubernetes_master %>:8080
+        --master=<%= kubernetes_master %>:8080 \
+        --logtostderr=true \
+        --v=3
         Restart=always
         RestartSec=10
 update:
