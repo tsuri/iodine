@@ -33,6 +33,93 @@ coreos:
   locksmith:
     endpoint: "<%= coreos_etcd_servers %>"
   units:
+    - name: rpcbind.service
+      enable: true
+      command: start
+    - name: rpc-statd.service
+      enable: true
+      command: start
+    - name: format-media-node0.service
+      command: start
+      content: |
+        [Unit]
+        Description=Formats the dedicated node disk
+        After=dev-sdb.device
+        Requires=dev-sdb.device
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/usr/sbin/wipefs -f /dev/sdb
+        # here we should create a partition and format that. More flexible if we want to resize
+        ExecStart=/usr/sbin/mkfs.ext4 -F /dev/sdb
+    - name: media-node0.mount
+      command: start
+      content: |
+        [Unit]
+        Description=Mount node to /media/node0
+        Requires=format-media-node0.service
+        After=format-media-node0.service
+        [Mount]
+        # here we should use the partition /dev/sdb1
+        What=/dev/sdb
+        Where=/media/node0
+        Type=ext4
+    - name: format-media-node1.service
+      command: start
+      content: |
+        [Unit]
+        Description=Formats the dedicated node disk
+        After=dev-sdc.device
+        Requires=dev-sdc.device
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/usr/sbin/wipefs -f /dev/sdc
+        ExecStart=/usr/sbin/mkfs.ext4 -F /dev/sdc
+    - name: media-node1.mount
+      command: start
+      content: |
+        [Unit]
+        Description=Mount node to /media/node1
+        Requires=format-media-node1.service
+        After=format-media-node1.service
+        [Mount]
+        What=/dev/sdc
+        Where=/media/node1
+        Type=ext4
+    - name: systemd-timesyncd.service
+      command: start
+    - name: fleet.service
+      command: start
+      etcd_servers: <%= coreos_etcd_servers %>
+    - name: flanneld.service
+      etcd-endpoints: <%= kubernetes_etcd_servers %>
+      drop-ins:
+      - name: 50-network-config.conf
+        content: |
+          [Service]
+          ExecStartPre=/usr/bin/etcdctl --endpoints=<%= kubernetes_etcd_servers %> set /coreos.com/network/config '{ "Network": "<%= kubernetes_pods_cidr %>" }'
+      command: start
+    - name: docker-tcp.socket
+      command: start
+      enable: true
+      content: |
+        [Unit]
+        Description=Docker Socket for the API
+
+        [Socket]
+        ListenStream=2375
+        Service=docker.service
+        BindIPv6Only=both
+
+        [Install]
+        WantedBy=sockets.target
+    - name: docker.service
+      drop-ins:
+        - name: 10-tls-verify.conf
+          content: |
+            [Service]
+            Environment="DOCKER_OPTS=--dns=<%= kubernetes_dns_ip %>"
     - name: kube-apiserver.service
       command: start
       content: |
@@ -94,7 +181,6 @@ coreos:
         ExecStart=/opt/bin/hyperkube \
         kubelet \
         --api_servers=<%= kubernetes_master %>:8080 \
-        --register-schedulable=false \
         --cluster-domain=<%= domain %> \
         --cluster-dns=<%= kubernetes_dns_ip %> \
         --address=0.0.0.0 \
@@ -109,86 +195,26 @@ coreos:
         --v=3
         Restart=always
         RestartSec=10
-    - name: format-media-node0.service
-      command: start
-      content: |
-        [Unit]
-        Description=Formats the dedicated node disk
-        After=dev-sdb.device
-        Requires=dev-sdb.device
-        [Service]
-        Type=oneshot
-        RemainAfterExit=yes
-        ExecStart=/usr/sbin/wipefs -f /dev/sdb
-        # here we should create a partition and format that. More flexible if we want to resize
-        ExecStart=/usr/sbin/mkfs.ext4 -F /dev/sdb
-    - name: media-node0.mount
-      command: start
-      content: |
-        [Unit]
-        Description=Mount node to /media/node0
-        Requires=format-media-node0.service
-        After=format-media-node0.service
-        [Mount]
-        # here we should use the partition /dev/sdb1
-        What=/dev/sdb
-        Where=/media/node0
-        Type=ext4
-    - name: format-media-node1.service
-      command: start
-      content: |
-        [Unit]
-        Description=Formats the dedicated node disk
-        After=dev-sdc.device
-        Requires=dev-sdc.device
-        [Service]
-        Type=oneshot
-        RemainAfterExit=yes
-        ExecStart=/usr/sbin/wipefs -f /dev/sdc
-        ExecStart=/usr/sbin/mkfs.ext4 -F /dev/sdc
-    - name: media-node1.mount
-      command: start
-      content: |
-        [Unit]
-        Description=Mount node to /media/node1
-        Requires=format-media-node1.service
-        After=format-media-node1.service
-        [Mount]
-        What=/dev/sdc
-        Where=/media/node1
-        Type=ext4
-    - name: systemd-timesyncd.service
-      command: start
-    - name: fleet.service
-      command: start
-      etcd_servers: <%= coreos_etcd_servers %>
-    - name: flanneld.service
-      etcd-endpoints: <%= kubernetes_etcd_servers %>
-      drop-ins:
-      - name: 50-network-config.conf
-        content: |
-          [Service]
-          ExecStartPre=/usr/bin/etcdctl --endpoints=<%= kubernetes_etcd_servers %> set /coreos.com/network/config '{ "Network": "<%= kubernetes_etcd_servers %>"  }'
-      command: start
-    - name: docker-tcp.socket
+    - name: kube-proxy.service
       command: start
       enable: true
       content: |
         [Unit]
-        Description=Docker Socket for the API
-
-        [Socket]
-        ListenStream=2375
-        Service=docker.service
-        BindIPv6Only=both
-
-        [Install]
-        WantedBy=sockets.target
-    - name: docker.service
-      drop-ins:
-        - name: 10-tls-verify.conf
-          content: |
-            [Service]
-            Environment="DOCKER_OPTS=--dns=<%= kubernetes_dns_ip %>"
+        Description=Kubernetes proxy
+        Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+        Requires=network-online.target
+        After=network-online.target
+        [Service]
+        # wait for kubernetes master to be up and ready
+        ExecStartPre=/opt/bin/wupiao <%= kubernetes_master %> 8080
+        ExecStart=/opt/bin/hyperkube \
+        proxy \
+        --master=<%= kubernetes_master %>:8080 \
+        --cluster-cidr=<%= kubernetes_pods_cidr %> \
+        --logtostderr=true \
+        --v=3
+        Restart=always
+        RestartSec=10
 update:
-    reboot-strategy: etcd-lock
+#    reboot-strategy: etcd-lock
+    reboot-strategy: off
