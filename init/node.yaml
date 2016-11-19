@@ -162,9 +162,11 @@ coreos:
         ExecStart=/opt/bin/hyperkube \
         proxy \
         --master=<%= kubernetes_master %>:8080 \
+        --cluster-cidr=<%= kubernetes_pods_cidr %> \
         --logtostderr=true \
         --v=3
         Restart=always
         RestartSec=10
 update:
-    reboot-strategy: etcd-lock
+#    reboot-strategy: etcd-lock
+    reboot-strategy: off
