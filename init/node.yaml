@@ -33,6 +33,18 @@ coreos:
   locksmith:
     endpoint: "<%= coreos_etcd_servers %>"
   units:
+    # recommended to be the first entry in
+    # https://github.com/coreos/flannel/issues/112, not sure if still needed.
+    # also, waiting for etcd is fragile, but I don't know if there's a better
+    # way
+    - name: flanneld.service
+      etcd-endpoints: <%= kubernetes_etcd_servers %>
+      drop-ins:
+      - name: 50-network-config.conf
+        content: |
+          [Service]
+          ExecStartPre=/usr/bin/etcdctl --endpoints=<%= kubernetes_etcd_servers %> set /coreos.com/network/config '{ "Network": "<%= kubernetes_pods_cidr %>" }'
+      command: start
     - name: rpcbind.service
       enable: true
       command: start
@@ -92,14 +104,6 @@ coreos:
     - name: fleet.service
       command: start
       etcd_servers: <%= coreos_etcd_servers %>
-    - name: flanneld.service
-      etcd-endpoints: <%= kubernetes_etcd_servers %>
-      drop-ins:
-      - name: 50-network-config.conf
-        content: |
-          [Service]
-          ExecStartPre=/usr/bin/etcdctl --endpoints=<%= kubernetes_etcd_servers %> set /coreos.com/network/config '{ "Network": "<%= kubernetes_pods_cidr %>" }'
-      command: start
     - name: docker-tcp.socket
       command: start
       enable: true
@@ -118,6 +122,10 @@ coreos:
       drop-ins:
         - name: 10-tls-verify.conf
           content: |
+            [Unit]
+            After=flanneld.service
+            Requires=flanneld.service
+            Restart=always
             [Service]
             Environment="DOCKER_OPTS=--dns=<%= kubernetes_dns_ip %>"
     - name: kube-kubelet.service
@@ -164,7 +172,7 @@ coreos:
         --master=<%= kubernetes_master %>:8080 \
         --cluster-cidr=<%= kubernetes_pods_cidr %> \
         --logtostderr=true \
-        --v=3
+        --v=4
         Restart=always
         RestartSec=10
 update:
